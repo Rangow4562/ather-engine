@@ -1,0 +1,158 @@
+import re
+from urllib.parse import urlparse
+
+from loguru import logger
+
+from app.model import TrinoConnectionInfo
+from app.model.data_source import DataSource
+from app.model.metadata.dto import (
+    Column,
+    Constraint,
+    RustatherEngineColumnType,
+    Table,
+    TableProperties,
+)
+from app.model.metadata.metadata import Metadata
+
+# Trino-specific type mapping
+# All possible types listed here: https://trino.io/docs/current/language/types.html
+TRINO_TYPE_MAPPING = {
+    # String Types (ignore Binary and Spatial Types for now)
+    "char": RustatherEngineColumnType.CHAR,
+    "varchar": RustatherEngineColumnType.VARCHAR,
+    "tinytext": RustatherEngineColumnType.TEXT,
+    "text": RustatherEngineColumnType.TEXT,
+    "mediumtext": RustatherEngineColumnType.TEXT,
+    "longtext": RustatherEngineColumnType.TEXT,
+    "enum": RustatherEngineColumnType.VARCHAR,
+    "set": RustatherEngineColumnType.VARCHAR,
+    # Numeric Types
+    "bit": RustatherEngineColumnType.TINYINT,
+    "tinyint": RustatherEngineColumnType.TINYINT,
+    "smallint": RustatherEngineColumnType.SMALLINT,
+    "mediumint": RustatherEngineColumnType.INTEGER,
+    "int": RustatherEngineColumnType.INTEGER,
+    "integer": RustatherEngineColumnType.INTEGER,
+    "bigint": RustatherEngineColumnType.BIGINT,
+    # Boolean Types
+    "bool": RustatherEngineColumnType.BOOL,
+    "boolean": RustatherEngineColumnType.BOOL,
+    # Decimal Types
+    "float": RustatherEngineColumnType.FLOAT4,
+    "double": RustatherEngineColumnType.DOUBLE,
+    "decimal": RustatherEngineColumnType.DECIMAL,
+    "numeric": RustatherEngineColumnType.NUMERIC,
+    # Date and Time Types
+    "date": RustatherEngineColumnType.DATE,
+    "datetime": RustatherEngineColumnType.TIMESTAMP,
+    "timestamp": RustatherEngineColumnType.TIMESTAMPTZ,
+    # JSON Type
+    "json": RustatherEngineColumnType.JSON,
+}
+
+
+class TrinoMetadata(Metadata):
+    def __init__(self, connection_info: TrinoConnectionInfo):
+        super().__init__(connection_info)
+        self.connection = DataSource.trino.get_connection(connection_info)
+
+    def get_table_list(self) -> list[Table]:
+        schema = self._get_schema_name()
+        sql = f"""
+                SELECT
+                    t.table_catalog,
+                    t.table_schema,
+                    t.table_name,
+                    tc.comment AS table_comment,
+                    c.column_name,
+                    c.data_type,
+                    c.is_nullable,
+                    c.column_comment
+                FROM
+                    information_schema.tables AS t
+                INNER JOIN
+                    information_schema.columns AS c
+                    ON t.table_catalog = c.table_catalog
+                    AND t.table_schema = c.table_schema
+                    AND t.table_name = c.table_name
+                INNER JOIN
+                    system.metadata.table_comments AS tc
+                    ON t.table_catalog = tc.catalog_name
+                    AND t.table_schema = tc.schema_name
+                    AND t.table_name = tc.table_name
+                WHERE t.table_schema = '{schema}'
+                AND c.table_catalog = (SELECT current_catalog)
+                """
+        response = self.connection.sql(sql).to_pandas().to_dict(orient="records")
+        unique_tables = {}
+        for row in response:
+            # generate unique table name
+            schema_table = self._format_trino_compact_table_name(
+                row["table_catalog"], row["table_schema"], row["table_name"]
+            )
+            # init table if not exists
+            if schema_table not in unique_tables:
+                unique_tables[schema_table] = Table(
+                    name=schema_table,
+                    description=row["table_comment"],
+                    columns=[],
+                    properties=TableProperties(
+                        schema=row["table_schema"],
+                        catalog=row["table_catalog"],
+                        table=row["table_name"],
+                    ),
+                    primaryKey="",
+                )
+
+            # table exists, and add column to the table
+            unique_tables[schema_table].columns.append(
+                Column(
+                    name=row["column_name"],
+                    type=self._transform_column_type(row["data_type"]),
+                    notNull=row["is_nullable"].lower() == "no",
+                    description=row["column_comment"],
+                    properties=None,
+                )
+            )
+        return list(unique_tables.values())
+
+    def get_constraints(self) -> list[Constraint]:
+        return []
+
+    def get_version(self) -> str:
+        return self.connection.sql("SELECT version()").to_pandas().iloc[0, 0]
+
+    def _format_trino_compact_table_name(
+        self, catalog: str, schema: str, table: str
+    ) -> str:
+        return f"{catalog}.{schema}.{table}"
+
+    def _get_schema_name(self):
+        if hasattr(self.connection_info, "connection_url"):
+            return urlparse(
+                self.connection_info.connection_url.get_secret_value()
+            ).path.split("/")[-1]
+        else:
+            return self.connection_info.trino_schema.get_secret_value()
+
+    def _transform_column_type(self, data_type: str) -> RustatherEngineColumnType:
+        """Transform Trino data type to RustatherEngineColumnType.
+
+        Args:
+            data_type: The Trino data type string
+
+        Returns:
+            The corresponding RustatherEngineColumnType
+        """
+        # Remove parameter specifications like VARCHAR(255) -> VARCHAR
+        normalized_type = re.sub(r"\(.*\)", "", data_type).strip().lower()
+
+        # Use the module-level mapping table
+        mapped_type = TRINO_TYPE_MAPPING.get(
+            normalized_type, RustatherEngineColumnType.UNKNOWN
+        )
+
+        if mapped_type == RustatherEngineColumnType.UNKNOWN:
+            logger.warning(f"Unknown Trino data type: {data_type}")
+
+        return mapped_type

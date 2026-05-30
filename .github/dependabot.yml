@@ -1,0 +1,66 @@
+version: 2
+updates:
+  - package-ecosystem: "maven"
+    directory: "/wren-core-legacy"
+    schedule:
+      interval: "weekly"
+    groups:
+      all:
+        patterns: [ "*" ]
+    commit-message:
+      prefix: "deps(java)"
+    labels:
+      - "dependencies"
+      - "java"
+      - "v1-engine-changed"
+  - package-ecosystem: "pip"
+    directory: "/ibis-server"
+    schedule:
+      interval: "weekly"
+    groups:
+      all:
+        patterns: [ "*" ]
+    commit-message:
+      prefix: "deps(ibis)"
+    labels:
+      - "dependencies"
+      - "python"
+      - "ibis"
+  - package-ecosystem: "pip"
+    directory: "/wren-core-py"
+    schedule:
+      interval: "weekly"
+    groups:
+      all:
+        patterns: [ "*" ]
+    commit-message:
+      prefix: "deps(core-py)"
+    labels:
+      - "dependencies"
+      - "python"
+  - package-ecosystem: "cargo"
+    directory: "/wren-core"
+    schedule:
+      interval: "weekly"
+    groups:
+      all:
+        patterns: [ "*" ]
+    commit-message:
+      prefix: "deps(core)"
+    labels:
+      - "dependencies"
+      - "core"
+      - "rust"
+  - package-ecosystem: "cargo"
+    directory: "/wren-core-base"
+    schedule:
+      interval: "weekly"
+    groups:
+      all:
+        patterns: [ "*" ]
+    commit-message:
+      prefix: "deps(core)"
+    labels:
+      - "dependencies"
+      - "core"
+      - "rust"

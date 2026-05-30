@@ -1,0 +1,53 @@
+# Stage 1: Build the JAR using Maven
+FROM maven:3.9.8-eclipse-temurin-21 AS builder
+
+# Convert line endings to avoid Checkstyle issues
+RUN apt-get update && apt-get install -y dos2unix
+
+WORKDIR /build
+
+# Copy source files
+COPY . .
+
+# Convert line endings for all source files
+RUN find . -name "*.java" -type f -exec dos2unix {} \;
+RUN find . -name "*.xml" -type f -exec dos2unix {} \;
+RUN find . -name "*.properties" -type f -exec dos2unix {} \;
+
+# Build the JAR using system Maven, skipping checkstyle and other validations
+# Build with exec-jar profile to create executable JAR with proper manifest
+RUN mvn clean package -DskipTests -Dcheckstyle.skip=true -Dspotbugs.skip=true -Dpmd.skip=true -Dmaven.javadoc.skip=true -Dmaven.gitcommitid.skip=true -Pexec-jar
+
+# Debug: Show what was built
+RUN ls -la ather-server/target/ | grep jar
+RUN echo "=== All JAR files in target ==="
+RUN find ather-server/target/ -name "*.jar" -exec ls -la {} \;
+
+# Stage 2: Create the runtime image
+FROM eclipse-temurin:21
+LABEL maintainer="https://www.canner.io/"
+WORKDIR /usr/src/app
+
+RUN \
+    apt update && \
+    apt -y install curl gpg lsb-release && \
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg && \
+    echo "deb http://apt.postgresql.org/pub/repos/apt/ `lsb_release -cs`-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
+    apt update && \
+    apt -y install postgresql-client-13
+
+# Get the version and set environment variables
+ARG ather_VERSION
+ENV ENV_ather_VERSION=${ather_VERSION}
+ENV ather_JAR=ather-server-${ENV_ather_VERSION}-executable.jar
+
+COPY --from=builder /build/ather-server/target/ather-server-*.jar ./
+
+# Debug: Show what was copied
+RUN ls -la *.jar
+
+# Convert entrypoint.sh to Unix format and make executable
+RUN echo '#!/bin/bash\nexport ENV_MAX_HEAP_SIZE=$2\nexport ENV_MIN_HEAP_SIZE=$3\n\n# Required add-opens=java.nio=ALL-UNNAMED for Apache arrow in the Snowflake\njava -Xmx${ENV_MAX_HEAP_SIZE:-"512m"} -Xms${ENV_MIN_HEAP_SIZE:-"64m"}  -Dconfig=etc/config.properties \\\n     --add-opens=java.base/java.nio=ALL-UNNAMED \\\n     -cp $1 io.ather.server.atherServer\n' > /usr/src/app/entrypoint.sh && \
+    chmod +x /usr/src/app/entrypoint.sh
+
+CMD ./entrypoint.sh ${ather_JAR} ${MAX_HEAP_SIZE} ${MIN_HEAP_SIZE}
