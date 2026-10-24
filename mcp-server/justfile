@@ -1,0 +1,12 @@
+default:
+    @just --list --unsorted
+
+build-core:
+    cd ../ather-core-py && just install && just build
+
+core-wheel-path := "../ather-core-py/target/wheels/ather_core_py-*.whl"
+
+install-core:
+    # just build-core
+    # Using pip install to avoid adding wheel to pyproject.toml
+    uv pip install --force-reinstall {{ core-wheel-path }}

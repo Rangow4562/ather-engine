@@ -1,0 +1,21 @@
+[package]
+name = "ather-core-base"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+python-binding = ["dep:pyo3"]
+default = []
+
+[dependencies]
+pyo3 = { version = "0.26.0", features = ["extension-module"], optional = true }
+serde = { version = "1.0.201", features = ["derive", "rc"] }
+ather-manifest-macro = { path = "manifest-macro" }
+serde_json = { version = "1.0.117" }
+serde_with = { version = "3.11.0" }
+sqlparser = { version = "0.58.0", features = ["visitor"] }
+
+
+[lib]
+name = "ather_core_base"
+path = "src/lib.rs"

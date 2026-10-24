@@ -1,0 +1,88 @@
+default:
+    @just --list --unsorted
+
+build-core:
+    cd /ather-core-py && just install && just build
+
+core-wheel-path := "/ather-core-py/target/wheels/ather_core_py-*.whl"
+
+install-core:
+    just build-core
+    poetry run pip install --force-reinstall {{ core-wheel-path }}
+
+install *args:
+    poetry install {{ args }}
+    just install-core
+
+pre-commit-install:
+    poetry run pre-commit install
+
+port := "8000"
+
+run:
+    poetry run python -m fastapi run --port {{ port }}
+
+workers := "2"
+
+run-gunicorn:
+    gunicorn app.main:app --bind 0.0.0.0:{{ port }} \
+        -k app.worker.atherUvicornWorker \
+        --workers {{ workers }} \
+        --max-requests 1000 \
+        --max-requests-jitter 100 \
+        --timeout 300 \
+        --graceful-timeout 60
+
+run-trace-console:
+    opentelemetry-instrument --traces_exporter console --metrics_exporter none fastapi run --port {{ port }}
+
+run-trace-otlp:
+    opentelemetry-instrument \
+        --traces_exporter otlp \
+        --exporter_otlp_endpoint http://localhost:4318 \
+        --exporter_otlp_protocol http/protobuf \
+        --service_name ather-engine \
+        fastapi run --port {{ port }}
+
+dev:
+    poetry run python -m fastapi dev --port {{ port }}
+
+test MARKER:
+    poetry run pytest -m '{{ MARKER }}'
+
+test-verbose MARKER:
+    poetry run pytest -s -v -m '{{ MARKER }}'
+
+image-name := "ghcr.io/canner/ather-engine-ibis:latest"
+
+docker-build:
+    docker buildx build -t {{ image-name }} -f Dockerfile \
+        --build-context ather-core-py=../ather-engine/ather-core-py \
+        --build-context ather-core=../ather-engine/ather-core \
+        --build-context ather-core-base=../ather-engine/ather-core-base \
+        .
+
+docker-run:
+    docker run -it --rm -p 8000:8000 --env-file .env {{ image-name }}
+
+docker-run-jupyter:
+    docker run -it --rm -p 8888:8888 --env-file .env {{ image-name }} jupyter
+
+compose-up:
+    docker compose -f ../docker/compose.yaml up
+
+compose-down:
+    docker compose -f ../docker/compose.yaml down
+
+lint:
+    poetry run ruff format -q . --check
+    poetry run ruff check .
+
+format:
+    poetry run ruff format .
+    poetry run ruff check --fix .
+    taplo fmt
+
+alias dbuild := docker-build
+alias drun := docker-run
+alias fmt := format

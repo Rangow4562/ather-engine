@@ -1,0 +1,35 @@
+ibis:
+- changed-files:
+  - any-glob-to-any-file: ['ibis-server/**']
+
+dependencies:
+- changed-files:
+  - any-glob-to-any-file: ['**/*.toml']
+
+python:
+- changed-files:
+  - any-glob-to-any-file: ['ibis-server/**', 'wren-core-py/**']
+
+rust:
+- changed-files:
+  - any-glob-to-any-file: ['wren-core/**']
+
+core:
+- changed-files:
+  - any-glob-to-any-file: ['wren-core/**']
+
+documentation:
+- changed-files:
+  - any-glob-to-any-file: ['**/*.md']
+
+bigquery:
+- changed-files:
+  - any-glob-to-any-file: ['**/*bigquery*']
+
+ci:
+- changed-files:
+  - any-glob-to-any-file: ['.github/**']
+
+v1-engine-changed:
+- changed-files:
+  - any-glob-to-any-file: ['wren-base/**', 'wren-main/**', 'wren-server/**', 'wren-tests/**', 'trino-parser/**', 'pom.xml']

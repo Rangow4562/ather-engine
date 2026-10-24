@@ -1,0 +1,7 @@
+function_type,name,return_type,param_names,param_types,description
+aggregate,uniq,UInt64,,,"Approximate number of different values using HyperLogLog."
+scalar,rand,UInt32,,,"Returns random number."
+scalar,rand64,UInt64,,,"Returns random 64-bit number."
+scalar,e,Float,,,"Returns value of e."
+scalar,yesterday,Date,,,"Returns yesterday's date."
+scalar,sleep,,seconds,Int64,"Pauses execution for a specified number of seconds."
